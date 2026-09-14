@@ -19,6 +19,11 @@ Override env vars are propagated to each step:
   NSYS_PROFILE truthy/falsy forces nsys tracing on/off for NVIDIA workloads
                (default: the GPU profile's `nsys`); NSYS_MAX_ITERATIONS and
                NSYS_DELAY_ITERATIONS tune the traced window
+  PERF_EVAL_RUN_TYPE
+               free-form run classifier ("nightly", "pr", "rc", ...) stamped
+               onto every ingested row so the dashboard can group/compare
+               like-with-like. Defaults to "adhoc" when unset.
+  NIGHTLY      back-compat shorthand for PERF_EVAL_RUN_TYPE=nightly
 
 Workloads can also set ``bench_only: true`` to apply BENCH_ONLY to that step
 without forcing the whole build to skip lm_eval.
@@ -364,7 +369,8 @@ def make_step(path, data, profiles):
         k: os.environ[k]
         for k in ("VLLM_IMAGE", "VLLM_IMAGE_CUDA", "VLLM_IMAGE_ROCM",
                   "VLLM_COMMIT", "BENCH_ONLY", "NSYS_PROFILE",
-                  "NSYS_MAX_ITERATIONS", "NSYS_DELAY_ITERATIONS")
+                  "NSYS_MAX_ITERATIONS", "NSYS_DELAY_ITERATIONS",
+                  "PERF_EVAL_RUN_TYPE", "NIGHTLY")
         if os.environ.get(k)
     }
     if bench_only and "BENCH_ONLY" not in step_env:
