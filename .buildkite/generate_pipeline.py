@@ -20,10 +20,13 @@ Override env vars are propagated to each step:
                (default: the GPU profile's `nsys`); NSYS_MAX_ITERATIONS and
                NSYS_DELAY_ITERATIONS tune the traced window
   PERF_EVAL_RUN_TYPE
-               free-form run classifier ("nightly", "pr", "rc", ...) stamped
-               onto every ingested row so the dashboard can group/compare
-               like-with-like. Defaults to "adhoc" when unset.
-  NIGHTLY      back-compat shorthand for PERF_EVAL_RUN_TYPE=nightly
+               free-form categorization marker ("nightly", "pr", "rc", ...)
+               stamped onto every ingested row so the dashboard can group/
+               compare like-with-like. Defaults to "adhoc" when unset. Purely
+               a label -- independent of NIGHTLY.
+  NIGHTLY      when set to 1, drives the nightly behavior and tags rows
+               nightly: true (the dashboard's /nightly view). Independent of
+               PERF_EVAL_RUN_TYPE.
 
 Workloads can also set ``bench_only: true`` to apply BENCH_ONLY to that step
 without forcing the whole build to skip lm_eval.
