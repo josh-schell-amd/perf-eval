@@ -20,16 +20,18 @@ Override env vars are propagated to each step:
                (default: the GPU profile's `nsys`); NSYS_MAX_ITERATIONS and
                NSYS_DELAY_ITERATIONS tune the traced window
   PERF_EVAL_RUN_TYPE
-               free-form categorization marker ("nightly", "pr", "rc", ...)
-               stamped onto every ingested row so the dashboard can group/
-               compare like-with-like. Defaults to "adhoc" when unset. Purely
-               a label -- independent of NIGHTLY.
+               build label ("nightly", "pr", "rc", ...) recorded with every
+               result so the dashboard can group like-with-like; defaults to
+               "adhoc". Independent of NIGHTLY.
   NIGHTLY      when set to 1, drives the nightly behavior and tags rows
-               nightly: true (the dashboard's /nightly view). Independent of
-               PERF_EVAL_RUN_TYPE.
+               nightly: true (the dashboard's /nightly view).
 
 Workloads can also set ``bench_only: true`` to apply BENCH_ONLY to that step
 without forcing the whole build to skip lm_eval.
+
+Every step uploads ``results/**/*`` as Buildkite artifacts: scores, raw bench
+JSON, samples, the exact commands, and run_metadata.json. That is the durable
+record of a run.
 
 Writes pipeline YAML to stdout for ``buildkite-agent pipeline upload``.
 """
