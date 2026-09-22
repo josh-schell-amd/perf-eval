@@ -14,7 +14,7 @@ vllm:
     VLLM_USE_BREAKABLE_CUDAGRAPH: 1
   serve_args: >-
     --tokenizer-mode deepseek_v41
-    --tensor-parallel-size 2
+    --tensor-parallel-size 4
     --gpu-memory-utilization 0.9
     --moe-backend aiter
     --no-swa-bounded-replay
