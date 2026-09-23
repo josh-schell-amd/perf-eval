@@ -28,16 +28,6 @@ lm_eval:
 
 vllm_bench:
   configs:
-    - name: 8k-in-1k-out
-      backend: openai
-      dataset: random
-      input_len: 8192
-      output_len: 1024
-      num_prompts: 512
-      max_concurrency: 128
-
-vllm_bench:
-  configs:
     - name: 1k-in-1k-out
       backend: openai
       dataset: random
