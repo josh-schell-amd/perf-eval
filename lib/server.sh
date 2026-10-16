@@ -175,7 +175,7 @@ raise SystemExit(0 if any(model.get("id") == expected for model in models) else 
 # its `+g<sha>` suffix carries the commit even when VLLM_COMMIT was not set.
 record_vllm_version() {
   local port=$1
-  WORKLOAD_VLLM_VERSION="$(curl -fs "http://localhost:${port}/version" 2>/dev/null \
+  WORKLOAD_VLLM_VERSION="$(curl -fs --max-time 10 "http://localhost:${port}/version" 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
   export WORKLOAD_VLLM_VERSION
   if [[ -n "$WORKLOAD_VLLM_VERSION" ]]; then

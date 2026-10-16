@@ -120,6 +120,7 @@ def test_readiness_waits_for_running_docker_container_to_become_healthy():
         "VLLM_SERVER_CONTAINER=starting-server; attempts=0; "
         "server_is_healthy() { attempts=$((attempts + 1)); (( attempts >= 2 )); }; "
         "docker() { [[ $1 == inspect ]] && echo true; }; "
+        "curl() { return 7; }; "
         "sleep() { :; }; "
         "wait_healthy 8000 3600 expected-model; "
         '[[ $attempts == 2 ]]',
@@ -135,12 +136,38 @@ def test_native_readiness_does_not_require_docker():
         "VLLM_SERVER_PID=$$; VLLM_SERVER_CONTAINER=; attempts=0; "
         "server_is_healthy() { attempts=$((attempts + 1)); (( attempts >= 2 )); }; "
         "docker() { echo 'unexpected Docker call' >&2; return 1; }; "
+        "curl() { return 7; }; "
         "sleep() { :; }; "
         "wait_healthy 8000 3600 expected-model",
         timeout=3,
     )
     assert result.returncode == 0, result.stderr
     assert "unexpected Docker call" not in result.stderr
+
+
+def test_record_vllm_version_derives_commit_from_version_suffix():
+    version = '{"version": "0.11.1.dev42+g1a2b3c4d5.rocm700"}'
+    result = run_bash(
+        "set -euo pipefail; unset WORKLOAD_VLLM_COMMIT; "
+        f"curl() {{ echo '{version}'; }}; "
+        "record_vllm_version 8000; "
+        'echo "$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_COMMIT"',
+        timeout=3,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == "0.11.1.dev42+g1a2b3c4d5.rocm700|1a2b3c4d5"
+
+
+def test_record_vllm_version_is_not_fatal_when_endpoint_fails():
+    result = run_bash(
+        "set -euo pipefail; WORKLOAD_VLLM_COMMIT=pinned; "
+        "curl() { return 22; }; "
+        "record_vllm_version 8000; "
+        'echo "[$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_COMMIT]"',
+        timeout=3,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == "[|pinned]"
 
 
 def test_nsys_configure_hands_capture_range_to_nsys():
