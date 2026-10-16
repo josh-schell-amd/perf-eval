@@ -4,6 +4,7 @@
 # Functions:
 #   pick_server_port
 #   resolve_image_digest <image> [runtime]
+#   describe_serve_command <port> <image> <model> <serve_args> [runtime]
 #   start_server <container> <port> <image> <model> <serve_args> <env> [runtime]
 #   record_vllm_version <port>
 #   wait_healthy <port> [timeout_s=3600] [expected_model]
@@ -51,9 +52,11 @@ PY
 }
 
 # Export WORKLOAD_IMAGE_DIGEST for the run record. The local Docker daemon is
-# authoritative; the native runtime has no daemon (the job *is* the image), so
-# fall back to the registry's current digest for the tag, which only matches if
-# the tag has not moved since the pull. Never fatal.
+# authoritative once the image is pulled; before that, and on the native
+# runtime, which has no daemon (the job *is* the image), fall back to the
+# registry's current digest for the tag, which only matches if the tag has not
+# moved since the pull -- so run.sh resolves it before launch, as close to the
+# pull as it can get. Never fatal.
 resolve_image_digest() {
   local image=$1 runtime=${2:-docker} digest=""
   if [[ "$runtime" != "native" ]] && command -v docker >/dev/null 2>&1; then
@@ -68,15 +71,12 @@ resolve_image_digest() {
   echo "  image digest: ${digest:-unavailable}"
 }
 
-start_server() {
-  local container=$1 port=$2 image=$3 model=$4 serve_args=$5 env=$6 runtime=${7:-docker}
-  VLLM_SERVER_PID=""
-  VLLM_SERVER_CONTAINER=""
-  VLLM_LOG_FILE=""
-  echo "--- :rocket: starting vllm: $model"
-
-  # The launch command for the run record. The server env is left out; it is
-  # recorded, with credentials redacted, in run_metadata.json.
+# Export WORKLOAD_SERVE_COMMAND, the launch command for the run record. Split
+# from start_server so the record can be written before launch, when a server
+# that never comes up still leaves its context behind. The server env is left
+# out; it is recorded, with credentials redacted, in run_metadata.json.
+describe_serve_command() {
+  local port=$1 image=$2 model=$3 serve_args=$4 runtime=${5:-docker}
   if [[ "$runtime" == "native" ]]; then
     WORKLOAD_SERVE_COMMAND="vllm serve $(printf '%q' "$model")"
   else
@@ -91,6 +91,15 @@ start_server() {
   fi
   WORKLOAD_SERVE_COMMAND+=" --port ${port} ${serve_args}"
   export WORKLOAD_SERVE_COMMAND
+}
+
+start_server() {
+  local container=$1 port=$2 image=$3 model=$4 serve_args=$5 env=$6 runtime=${7:-docker}
+  VLLM_SERVER_PID=""
+  VLLM_SERVER_CONTAINER=""
+  VLLM_LOG_FILE=""
+  echo "--- :rocket: starting vllm: $model"
+  describe_serve_command "$port" "$image" "$model" "$serve_args" "$runtime"
   echo "  serve command: $WORKLOAD_SERVE_COMMAND"
 
   if [[ "$runtime" == "native" ]]; then
@@ -173,18 +182,20 @@ raise SystemExit(0 if any(model.get("id") == expected for model in models) else 
 
 # Export the vLLM build that is actually serving. /version is authoritative, and
 # its `+g<sha>` suffix carries the commit even when VLLM_COMMIT was not set.
+# That commit is abbreviated, so it goes in its own variable rather than
+# WORKLOAD_VLLM_COMMIT: ingest keys on vllm_commit, and mixing short and full
+# SHAs there would split one commit into two.
 record_vllm_version() {
   local port=$1
   WORKLOAD_VLLM_VERSION="$(curl -fs --max-time 10 "http://localhost:${port}/version" 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
-  export WORKLOAD_VLLM_VERSION
+  WORKLOAD_VLLM_VERSION_COMMIT=""
+  if [[ "$WORKLOAD_VLLM_VERSION" =~ \+g([0-9a-f]{7,40}) ]]; then
+    WORKLOAD_VLLM_VERSION_COMMIT="${BASH_REMATCH[1]}"
+  fi
+  export WORKLOAD_VLLM_VERSION WORKLOAD_VLLM_VERSION_COMMIT
   if [[ -n "$WORKLOAD_VLLM_VERSION" ]]; then
     echo "  vllm version: $WORKLOAD_VLLM_VERSION"
-  fi
-  if [[ -z "${WORKLOAD_VLLM_COMMIT:-}" && "$WORKLOAD_VLLM_VERSION" =~ \+g([0-9a-f]{7,40}) ]]; then
-    WORKLOAD_VLLM_COMMIT="${BASH_REMATCH[1]}"
-    export WORKLOAD_VLLM_COMMIT
-    echo "  vllm commit (from version): $WORKLOAD_VLLM_COMMIT"
   fi
 }
 

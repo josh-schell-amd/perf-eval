@@ -49,15 +49,27 @@ fi
 
 trap 'nsys_finalize "$CONTAINER"; stop_server "$CONTAINER"' EXIT
 
+# The run record: the result files carry the numbers and the .cmd files the
+# exact commands; this adds the surrounding context so a run can be reproduced
+# from its artifacts alone. It is written before launch so a server that never
+# comes up -- the run that most needs debugging -- still leaves its image,
+# serve command and env behind, then rewritten once the server is healthy and
+# the vLLM version can be read off it.
+resolve_image_digest "$WORKLOAD_IMAGE" "$WORKLOAD_SERVER_RUNTIME"
+describe_serve_command "$PORT" "$WORKLOAD_IMAGE" "$WORKLOAD_MODEL" \
+                       "$WORKLOAD_SERVE_ARGS" "$WORKLOAD_SERVER_RUNTIME"
+python3 "$DIR/write_run_metadata.py" "$RESULTS_DIR" || true
+
 start_server "$CONTAINER" "$PORT" "$WORKLOAD_IMAGE" "$WORKLOAD_MODEL" \
              "$WORKLOAD_SERVE_ARGS" "$WORKLOAD_ENV" "$WORKLOAD_SERVER_RUNTIME"
 wait_healthy "$PORT" "$WORKLOAD_SERVER_STARTUP_TIMEOUT" "$WORKLOAD_MODEL"
 
-# The run record is written once the server is up: by then the image has been
-# pulled and the vLLM version can be read off the server. The result files
-# carry the numbers and the .cmd files the exact commands; this adds the
-# surrounding context so a run can be reproduced from its artifacts alone.
-resolve_image_digest "$WORKLOAD_IMAGE" "$WORKLOAD_SERVER_RUNTIME"
+WORKLOAD_SERVER_HEALTHY=true
+export WORKLOAD_SERVER_HEALTHY
+# Docker has pulled the image by now, so its daemon has the authoritative digest.
+if [[ "$WORKLOAD_SERVER_RUNTIME" != "native" ]]; then
+  resolve_image_digest "$WORKLOAD_IMAGE" "$WORKLOAD_SERVER_RUNTIME"
+fi
 python3 "$DIR/write_run_metadata.py" "$RESULTS_DIR" || true
 
 # vllm bench serve runs first so we can validate perf flow without waiting

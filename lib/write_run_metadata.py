@@ -32,6 +32,7 @@ WORKLOAD_FIELDS = (
     ("WORKLOAD_IMAGE_DIGEST", "image_digest"),
     ("WORKLOAD_VLLM_COMMIT", "vllm_commit"),
     ("WORKLOAD_VLLM_VERSION", "vllm_version"),
+    ("WORKLOAD_VLLM_VERSION_COMMIT", "vllm_version_commit"),
     ("WORKLOAD_SERVER_RUNTIME", "server_runtime"),
     ("WORKLOAD_SERVE_ARGS", "serve_args"),
     ("WORKLOAD_SERVE_COMMAND", "serve_command"),
@@ -57,8 +58,20 @@ BENCH_TSV_FIELDS = ("name", "backend", "dataset", "isl", "osl", "num_prompts",
 BENCH_INT_FIELDS = ("isl", "osl", "num_prompts", "conc", "repetitions")
 
 # The server env is merged from the GPU profile and the recipe, and this file is
-# uploaded as a public artifact.
-SECRET_MARKERS = ("TOKEN", "SECRET", "PASSWD", "PASSWORD", "KEY", "CREDENTIAL")
+# uploaded as a public artifact. Names are matched on whole `_`-separated words,
+# not substrings, so tuning knobs like TOKENIZERS_PARALLELISM or a *_KEY_CACHE_*
+# setting survive while HF_TOKEN or OPENAI_API_KEY do not.
+SECRET_WORDS = frozenset(("TOKEN", "TOKENS", "SECRET", "SECRETS", "PASSWD",
+                          "PASSWORD", "CREDENTIAL", "CREDENTIALS", "APIKEY"))
+
+
+def is_secret_name(name):
+    words = name.upper().split("_")
+    if SECRET_WORDS.intersection(words):
+        return True
+    # KEY on its own is mostly a secret at the end of a name (API_KEY,
+    # AWS_SECRET_ACCESS_KEY, ACCESS_KEY_ID) and a noun elsewhere (KEY_CACHE).
+    return words[-1] == "KEY" or words[-2:] == ["KEY", "ID"]
 
 
 def env_or_none(name):
@@ -77,7 +90,7 @@ def parse_env_block(raw):
         key = key.strip()
         if not key:
             continue
-        if any(m in key.upper() for m in SECRET_MARKERS):
+        if is_secret_name(key):
             out[key] = "<redacted>"
         else:
             out[key] = value.strip()
@@ -142,6 +155,9 @@ def main():
     data["lm_eval_tasks"] = parse_task_tsv(os.environ.get("WORKLOAD_LM_EVAL_TASKS_TSV"))
     data["run_type"] = (os.environ.get(RUN_TYPE_ENV) or "").strip() or DEFAULT_RUN_TYPE
     data["nightly"] = os.environ.get("NIGHTLY") == "1"
+    # run.sh writes this file before launch and again once healthy, so a run
+    # whose server never came up is still recorded, and marked as such.
+    data["server_healthy"] = os.environ.get("WORKLOAD_SERVER_HEALTHY") == "true"
     data["buildkite"] = {k.lower(): env_or_none(k) for k in BUILDKITE_FIELDS}
 
     path = os.path.join(results_dir, "run_metadata.json")
@@ -158,7 +174,9 @@ def main():
     print(f"  run metadata -> {path}")
     missing = [f for f in ("image", "image_digest", "vllm_version", "serve_command")
                if not data.get(f)]
-    if missing:
+    # Before launch the vLLM version is not knowable yet; only report gaps once
+    # the record is final.
+    if missing and data["server_healthy"]:
         print(f"  run metadata: not captured: {', '.join(missing)}")
     return 0
 

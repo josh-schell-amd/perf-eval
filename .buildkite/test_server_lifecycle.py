@@ -145,17 +145,46 @@ def test_native_readiness_does_not_require_docker():
     assert "unexpected Docker call" not in result.stderr
 
 
-def test_record_vllm_version_derives_commit_from_version_suffix():
-    version = '{"version": "0.11.1.dev42+g1a2b3c4d5.rocm700"}'
+def test_serve_command_is_known_before_launch():
     result = run_bash(
-        "set -euo pipefail; unset WORKLOAD_VLLM_COMMIT; "
-        f"curl() {{ echo '{version}'; }}; "
-        "record_vllm_version 8000; "
-        'echo "$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_COMMIT"',
+        "set -euo pipefail; "
+        "describe_serve_command 8000 vllm/vllm-openai-rocm:nightly org/model '-tp 8' native; "
+        'echo "$WORKLOAD_SERVE_COMMAND"; '
+        "describe_serve_command 8000 vllm/vllm-openai:nightly org/model '-tp 8'; "
+        'echo "$WORKLOAD_SERVE_COMMAND"',
         timeout=3,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines()[-1] == "0.11.1.dev42+g1a2b3c4d5.rocm700|1a2b3c4d5"
+    assert result.stdout.splitlines() == [
+        "vllm serve org/model --port 8000 -tp 8",
+        "docker run --rm --gpus all --ipc=host -p 8000:8000 "
+        "vllm/vllm-openai:nightly org/model --port 8000 -tp 8",
+    ]
+
+
+def test_record_vllm_version_derives_commit_without_touching_vllm_commit():
+    result = run_bash(
+        "set -euo pipefail; unset WORKLOAD_VLLM_COMMIT; "
+        """curl() { echo '{"version": "0.11.1.dev42+g1a2b3c4d5.rocm700"}'; }; """
+        "record_vllm_version 8000; "
+        'echo "$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_VERSION_COMMIT|${WORKLOAD_VLLM_COMMIT-unset}"',
+        timeout=3,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == (
+        "0.11.1.dev42+g1a2b3c4d5.rocm700|1a2b3c4d5|unset")
+
+
+def test_record_vllm_version_without_commit_suffix():
+    result = run_bash(
+        "set -euo pipefail; "
+        """curl() { echo '{"version": "0.11.1+rocm700"}'; }; """
+        "record_vllm_version 8000; "
+        'echo "$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_VERSION_COMMIT"',
+        timeout=3,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == "0.11.1+rocm700|"
 
 
 def test_record_vllm_version_is_not_fatal_when_endpoint_fails():
@@ -163,11 +192,11 @@ def test_record_vllm_version_is_not_fatal_when_endpoint_fails():
         "set -euo pipefail; WORKLOAD_VLLM_COMMIT=pinned; "
         "curl() { return 22; }; "
         "record_vllm_version 8000; "
-        'echo "[$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_COMMIT]"',
+        'echo "[$WORKLOAD_VLLM_VERSION|$WORKLOAD_VLLM_VERSION_COMMIT|$WORKLOAD_VLLM_COMMIT]"',
         timeout=3,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines()[-1] == "[|pinned]"
+    assert result.stdout.splitlines()[-1] == "[||pinned]"
 
 
 def test_nsys_configure_hands_capture_range_to_nsys():

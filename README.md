@@ -147,9 +147,11 @@ Run the CPU-only regression tests with:
 ```bash
 python3 .buildkite/test_generate_pipeline.py
 python3 .buildkite/test_benchmark_repetitions.py
+python3 .buildkite/test_server_lifecycle.py
+python3 .buildkite/test_run_metadata.py
 ```
 
-They require only the standard library and PyYAML; the Buildkite bootstrap runs both before uploading GPU steps.
+They require only the standard library and PyYAML; the Buildkite bootstrap runs all of them before uploading GPU steps.
 
 ### Where results go
 
@@ -159,14 +161,15 @@ They require only the standard library and PyYAML; the Buildkite bootstrap runs 
 
 | Artifact | Contents |
 | --- | --- |
-| `run_metadata.json` | image and **image digest**, vLLM version and commit, serve command, server env vars, device/tp/precision, bench and lm_eval configs, run type, and the Buildkite build/job identifiers |
-| `bench-<name>.json` | raw `vllm bench serve` output, one per config |
-| `bench-<name>.cmd` | the `vllm bench serve` command line, as it ran |
+| `run_metadata.json` | image and **image digest**, vLLM version and commit, serve command, server env vars, device/tp/precision, bench and lm_eval configs, run type, whether the server came up, and the Buildkite build/job identifiers |
+| `bench-<name>.json` | raw `vllm bench serve` output, one per config; with `repetitions > 1`, the aggregate of the runs |
+| `bench-<name>-run-<n>.json` | raw output of each repetition, only when `repetitions > 1` |
+| `bench-<name>.cmd` / `bench-<name>-run-<n>.cmd` | the `vllm bench serve` command line, as it ran (on Docker runs, prefixed with the `docker exec` into the server container) |
 | `<task>.cmd` | the `lm_eval` command line, as it ran |
 | `<task>/**/results_*.json` | lm_eval scores |
 | `<task>/**/samples_*.jsonl` | per-sample records |
 
-`lib/write_run_metadata.py` writes `run_metadata.json` once the server reports healthy, which is the earliest point the vLLM version is known. Anything it could not capture is recorded as `null` rather than omitted, so a reader can tell "not captured" from "not applicable". Env values whose names look like credentials (`*TOKEN*`, `*SECRET*`, `*PASSWD*`, `*KEY*`) are redacted, since the file is a public artifact.
+`lib/write_run_metadata.py` writes `run_metadata.json` twice: before the server is launched, so a server that never comes up still leaves its image, digest, serve command and env behind (with `server_healthy: false`), and again once it reports healthy, adding the vLLM version read from its `/version` endpoint. `vllm_commit` is the commit the build was asked to test (`VLLM_COMMIT` or a commit-bearing image tag); `vllm_version_commit` is the abbreviated commit parsed from the running server's version string, and is the one to trust when the two disagree or `vllm_commit` is null. Anything it could not capture is recorded as `null` rather than omitted, so a reader can tell "not captured" from "not applicable". Env values are redacted when a `_`-separated word of their name is `TOKEN`, `SECRET`, `PASSWD`, `PASSWORD`, `CREDENTIAL` or `APIKEY` (or a plural), or when the name ends in `KEY` / `KEY_ID`, since the file is a public artifact. Settings like `TOKENIZERS_PARALLELISM` are kept.
 
 To repeat what a build ran, download its artifacts and replay `serve_command` and the `.cmd` files, pinning the image by `image_digest` rather than its tag — a tag like `:nightly` moves, a digest does not.
 
