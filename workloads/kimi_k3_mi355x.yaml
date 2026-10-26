@@ -27,7 +27,7 @@ vllm:
     --disable-flashinfer-autotune
     --max-model-len 1048576
     --kv-cache-dtype fp8
-    --attention-config {"use_prefill_query_quantization":true,"mla_prefill_backend":"TOKENSPEED_MLA"}
+    --attention-config {"use_prefill_query_quantization":true}
     --enable-prefix-caching
     --prefix-match-unit 128
 
