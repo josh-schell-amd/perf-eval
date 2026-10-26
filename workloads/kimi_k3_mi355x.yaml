@@ -20,8 +20,17 @@ vllm:
     VLLM_USE_BREAKABLE_CUDAGRAPH: 0
     VLLM_ROCM_USE_AITER_MOE_SITUV2: 1
   serve_args: >-
-    --tensor-parallel-size 8
     --trust-remote-code
+    --gpu-memory-utilization 0.95
+    --tensor-parallel-size 8
+    --load-format fastsafetensors
+    --disable-flashinfer-autotune
+    --max-model-len 1048576
+    --kv-cache-dtype fp8
+    --attention-config '{"use_prefill_query_quantization":true,"mla_prefill_backend":"TOKENSPEED_MLA"}'
+    --enable-prefix-caching
+    --attention-backend TOKENSPEED_MLA
+    --prefix-match-unit 128
 
 lm_eval:
   model_args:
