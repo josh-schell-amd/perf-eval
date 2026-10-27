@@ -1,11 +1,9 @@
 # Kimi-K3 on AMD MI355X
 # Recipe: https://recipes.vllm.ai/moonshotai/Kimi-K3
 # K3 needs at least 8x MI355X/MI350X on ROCm (8x GB300 on NVIDIA) — there is
-# no H200 profile, the 2.8T model does not fit on Hopper. Requires the
-# dedicated kimi-k3 image; support is not in a stable release yet.
-# Env matches the verified MI355X profile: VLLM_USE_BREAKABLE_CUDAGRAPH=0 is
-# required, and VLLM_ROCM_USE_AITER_MOE_SITUV2_A8W4=1 selects the aiter a8w4
-# MoE path on gfx950 (CDNA4).
+# no H200 profile, the 2.8T model does not fit on Hopper.
+# Env and serve args match the recipe's MI355X docker command;
+# VLLM_USE_BREAKABLE_CUDAGRAPH=0 is required.
 name: kimi_k3-mi355x
 gpu: MI355X
 num_gpus: 8
@@ -17,19 +15,32 @@ vllm:
   # (K3 support is in current nightlies).
   env:
     VLLM_ROCM_USE_AITER: 1
-    VLLM_USE_BREAKABLE_CUDAGRAPH: 0
+    SAFETENSORS_FAST_GPU: 1
     VLLM_ROCM_USE_AITER_MOE_SITUV2: 1
+    VLLM_USE_BREAKABLE_CUDAGRAPH: 0
+    VLLM_ROCM_AITER_MLA_ASM_PADDING: asm
+    VLLM_ROCM_AITER_MLA_DCP_VERIFY: asm
+    AITER_FLYDSL_STAGE2_FP8: 1
+    VLLM_USE_RUST_FRONTEND: 1
+  # serve_args is word-split without shell quoting: keep JSON values unquoted
+  # and free of spaces. --load-format auto overrides the profile default.
   serve_args: >-
     --trust-remote-code
-    --gpu-memory-utilization 0.95
     --tensor-parallel-size 8
-    --load-format fastsafetensors
-    --disable-flashinfer-autotune
+    --load-format auto
+    --mm-encoder-tp-mode data
+    --max-num-seqs 128
+    --max-num-batched-tokens 4096
+    --compilation-config {"cudagraph_mode":"FULL_DECODE_ONLY","custom_ops":["+fused_rms_norm_gated"]}
+    --gpu-memory-utilization 0.9
     --max-model-len 1048576
-    --kv-cache-dtype fp8
-    --attention-config {"use_prefill_query_quantization":true}
     --enable-prefix-caching
-    --prefix-match-unit 128
+    --kv-cache-dtype fp8
+    --attention-config {"mla_prefill_backend":"ROCM_AITER_FA"}
+    --stream-interval 10
+    --enable-auto-tool-choice
+    --tool-call-parser kimi_k3
+    --reasoning-parser kimi_k3
 
 lm_eval:
   model_args:
